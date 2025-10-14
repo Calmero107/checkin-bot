@@ -9,6 +9,7 @@ import java.util.Date;
 
 public class AttendanceRecord {
     public static final ZoneId VN_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    public static final ZoneId UTC_ZONE = ZoneId.of("UTC");
 
     private Long userId;
     private String username;
@@ -40,11 +41,11 @@ public class AttendanceRecord {
         Document doc = new Document();
         doc.append("userId", userId);
         doc.append("username", username);
-        doc.append("date", Date.from(date.atStartOfDay(VN_ZONE).toInstant()));
+        doc.append("date", Date.from(date.atStartOfDay(UTC_ZONE).toInstant()));
         doc.append("checkinTime", checkinTime != null ?
-                Date.from(checkinTime.atZone(VN_ZONE).toInstant()) : null);
+                Date.from(checkinTime.atZone(UTC_ZONE).toInstant()) : null);
         doc.append("checkoutTime", checkoutTime != null ?
-                Date.from(checkoutTime.atZone(VN_ZONE).toInstant()) : null);
+                Date.from(checkoutTime.atZone(UTC_ZONE).toInstant()) : null);
         doc.append("totalHours", totalHours);
 
         // Thêm location info
