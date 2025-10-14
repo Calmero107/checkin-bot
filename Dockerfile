@@ -8,7 +8,7 @@ WORKDIR /app
 COPY target/bot-checkin-full.jar app.jar
 
 # Copy file .env (nếu có)
-COPY .env .env
+#COPY .env .env
 
 # Mở port (nếu app có web hoặc webhook, còn nếu bot thì có thể bỏ)
 EXPOSE 8080
