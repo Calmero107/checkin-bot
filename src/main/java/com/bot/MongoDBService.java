@@ -23,12 +23,12 @@ public class MongoDBService {
 
     private MongoDBService() {
         try {
-            Dotenv dotenv = Dotenv.load();
-            String user = dotenv.get("MONGO_USER");
-            String pass = dotenv.get("MONGO_PASS");
-            String cluster = dotenv.get("MONGO_CLUSTER");
-            String dbName = dotenv.get("MONGO_DB");
-            String collectionName = dotenv.get("MONGO_COLLECTION");
+//            Dotenv dotenv = Dotenv.load();
+            String user = System.getenv("MONGO_USER");
+            String pass = System.getenv("MONGO_PASS");
+            String cluster = System.getenv("MONGO_CLUSTER");
+            String dbName = System.getenv("MONGO_DB");
+            String collectionName = System.getenv("MONGO_COLLECTION");
 
             String connectionString = String.format(
                     "mongodb+srv://%s:%s@%s/?retryWrites=true&w=majority&appName=Cluster0",

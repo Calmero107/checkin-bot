@@ -31,9 +31,9 @@ public class AttendanceBot extends TelegramLongPollingBot {
     private final Map<Long, String> waitingForLocation = new HashMap<>(); // Lưu trạng thái chờ location
 
     static {
-        Dotenv dotenv = Dotenv.load();
-        BOT_TOKEN = dotenv.get("BOT_TOKEN");
-        BOT_USERNAME = dotenv.get("BOT_USERNAME");
+//        Dotenv dotenv = Dotenv.load();
+        BOT_TOKEN = System.getenv("BOT_TOKEN");
+        BOT_USERNAME = System.getenv("BOT_USERNAME");
     }
 
     public AttendanceBot() {
