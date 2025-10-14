@@ -1,17 +1,14 @@
-# Dùng JDK nhẹ gọn
-FROM eclipse-temurin:21-jdk-alpine
-
-# Tạo thư mục làm việc trong container
+# ===== Stage 1: Build JAR =====
+FROM eclipse-temurin:21-jdk-alpine AS builder
 WORKDIR /app
+COPY pom.xml .
+COPY src ./src
+RUN apk add --no-cache maven
+RUN mvn clean package -DskipTests
 
-# Copy file JAR từ target vào container
-COPY target/bot-checkin-full.jar app.jar
-
-# Copy file .env (nếu có)
-#COPY .env .env
-
-# Mở port (nếu app có web hoặc webhook, còn nếu bot thì có thể bỏ)
-EXPOSE 8080
-
-# Lệnh chạy app
+# ===== Stage 2: Run App =====
+FROM eclipse-temurin:21-jdk-alpine
+WORKDIR /app
+COPY --from=builder /app/target/*-full.jar app.jar
 ENTRYPOINT ["java", "-jar", "app.jar"]
+
