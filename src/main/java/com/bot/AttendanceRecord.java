@@ -8,6 +8,8 @@ import java.time.ZoneId;
 import java.util.Date;
 
 public class AttendanceRecord {
+    public static final ZoneId VN_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+
     private Long userId;
     private String username;
     private LocalDate date;
@@ -38,11 +40,11 @@ public class AttendanceRecord {
         Document doc = new Document();
         doc.append("userId", userId);
         doc.append("username", username);
-        doc.append("date", Date.from(date.atStartOfDay(ZoneId.systemDefault()).toInstant()));
+        doc.append("date", Date.from(date.atStartOfDay(VN_ZONE).toInstant()));
         doc.append("checkinTime", checkinTime != null ?
-                Date.from(checkinTime.atZone(ZoneId.systemDefault()).toInstant()) : null);
+                Date.from(checkinTime.atZone(VN_ZONE).toInstant()) : null);
         doc.append("checkoutTime", checkoutTime != null ?
-                Date.from(checkoutTime.atZone(ZoneId.systemDefault()).toInstant()) : null);
+                Date.from(checkoutTime.atZone(VN_ZONE).toInstant()) : null);
         doc.append("totalHours", totalHours);
 
         // Thêm location info
@@ -63,16 +65,16 @@ public class AttendanceRecord {
         record.username = doc.getString("username");
 
         Date dateValue = doc.getDate("date");
-        record.date = dateValue.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+        record.date = dateValue.toInstant().atZone(VN_ZONE).toLocalDate();
 
         Date checkinValue = doc.getDate("checkinTime");
         if (checkinValue != null) {
-            record.checkinTime = checkinValue.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
+            record.checkinTime = checkinValue.toInstant().atZone(VN_ZONE).toLocalDateTime();
         }
 
         Date checkoutValue = doc.getDate("checkoutTime");
         if (checkoutValue != null) {
-            record.checkoutTime = checkoutValue.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
+            record.checkoutTime = checkoutValue.toInstant().atZone(VN_ZONE).toLocalDateTime();
         }
 
         record.totalHours = doc.getDouble("totalHours");

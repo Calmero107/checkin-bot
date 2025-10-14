@@ -15,6 +15,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
+import static com.bot.AttendanceRecord.VN_ZONE;
+
 public class MongoDBService {
     private static MongoDBService instance;
     private MongoClient mongoClient;
@@ -59,7 +61,7 @@ public class MongoDBService {
 
             Bson filter = Filters.and(
                     Filters.eq("userId", record.getUserId()),
-                    Filters.eq("date", Date.from(record.getDate().atStartOfDay(ZoneId.systemDefault()).toInstant()))
+                    Filters.eq("date", Date.from(record.getDate().atStartOfDay(VN_ZONE).toInstant()))
             );
 
             ReplaceOptions options = new ReplaceOptions().upsert(true);
@@ -75,7 +77,7 @@ public class MongoDBService {
         try {
             Bson filter = Filters.and(
                     Filters.eq("userId", userId),
-                    Filters.eq("date", Date.from(date.atStartOfDay(ZoneId.systemDefault()).toInstant()))
+                    Filters.eq("date", Date.from(date.atStartOfDay(VN_ZONE).toInstant()))
             );
 
             Document doc = attendanceCollection.find(filter).first();
@@ -98,8 +100,8 @@ public class MongoDBService {
             LocalDate startOfWeek = referenceDate.with(weekFields.dayOfWeek(), 1);
             LocalDate endOfWeek = startOfWeek.plusDays(6);
 
-            Date startDate = Date.from(startOfWeek.atStartOfDay(ZoneId.systemDefault()).toInstant());
-            Date endDate = Date.from(endOfWeek.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant());
+            Date startDate = Date.from(startOfWeek.atStartOfDay(VN_ZONE).toInstant());
+            Date endDate = Date.from(endOfWeek.plusDays(1).atStartOfDay(VN_ZONE).toInstant());
 
             Bson filter = Filters.and(
                     Filters.eq("userId", userId),
@@ -145,7 +147,7 @@ public class MongoDBService {
         List<AttendanceRecord> records = new ArrayList<>();
 
         try {
-            Date targetDate = Date.from(date.atStartOfDay(ZoneId.systemDefault()).toInstant());
+            Date targetDate = Date.from(date.atStartOfDay(VN_ZONE).toInstant());
 
             Bson filter = Filters.eq("date", targetDate);
             FindIterable<Document> docs = attendanceCollection.find(filter)
@@ -171,8 +173,8 @@ public class MongoDBService {
             LocalDate startOfWeek = referenceDate.with(weekFields.dayOfWeek(), 1);
             LocalDate endOfWeek = startOfWeek.plusDays(6);
 
-            Date startDate = Date.from(startOfWeek.atStartOfDay(ZoneId.systemDefault()).toInstant());
-            Date endDate = Date.from(endOfWeek.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant());
+            Date startDate = Date.from(startOfWeek.atStartOfDay(VN_ZONE).toInstant());
+            Date endDate = Date.from(endOfWeek.plusDays(1).atStartOfDay(VN_ZONE).toInstant());
 
             Bson filter = Filters.and(
                     Filters.gte("date", startDate),
@@ -201,8 +203,8 @@ public class MongoDBService {
             LocalDate startOfMonth = referenceDate.withDayOfMonth(1);
             LocalDate endOfMonth = referenceDate.withDayOfMonth(referenceDate.lengthOfMonth());
 
-            Date startDate = Date.from(startOfMonth.atStartOfDay(ZoneId.systemDefault()).toInstant());
-            Date endDate = Date.from(endOfMonth.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant());
+            Date startDate = Date.from(startOfMonth.atStartOfDay(VN_ZONE).toInstant());
+            Date endDate = Date.from(endOfMonth.plusDays(1).atStartOfDay(VN_ZONE).toInstant());
 
             Bson filter = Filters.and(
                     Filters.gte("date", startDate),
