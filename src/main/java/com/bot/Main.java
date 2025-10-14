@@ -1,20 +1,22 @@
 package com.bot;
 
+import lombok.extern.slf4j.Slf4j;
 import org.telegram.telegrambots.meta.TelegramBotsApi;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.updatesreceivers.DefaultBotSession;
 
+@Slf4j
 public class Main {
     public static void main(String[] args) throws Exception {
         try {
             TelegramBotsApi botsApi = new TelegramBotsApi(DefaultBotSession.class);
             AttendanceBot bot = new AttendanceBot();
             botsApi.registerBot(bot);
-            System.out.println("✅ Bot đang chạy với MongoDB...");
+            log.info("Bot đang chạy với MongoDB...");
 
             // Thêm shutdown hook để đóng MongoDB connection
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                System.out.println("\n🛑 Đang tắt bot...");
+                log.info("\nĐang tắt bot...");
                 MongoDBService.getInstance().close();
             }));
 
