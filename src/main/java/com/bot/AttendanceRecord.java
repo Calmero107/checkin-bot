@@ -14,6 +14,12 @@ public class AttendanceRecord {
     private LocalDateTime checkinTime;
     private LocalDateTime checkoutTime;
     private Double totalHours;
+    private Double checkinLatitude;
+    private Double checkinLongitude;
+    private String checkinAddress;
+    private Double checkoutLatitude;
+    private Double checkoutLongitude;
+    private String checkoutAddress;
 
     public AttendanceRecord() {}
 
@@ -38,6 +44,15 @@ public class AttendanceRecord {
         doc.append("checkoutTime", checkoutTime != null ?
                 Date.from(checkoutTime.atZone(ZoneId.systemDefault()).toInstant()) : null);
         doc.append("totalHours", totalHours);
+
+        // Thêm location info
+        doc.append("checkinLatitude", checkinLatitude);
+        doc.append("checkinLongitude", checkinLongitude);
+        doc.append("checkinAddress", checkinAddress);
+        doc.append("checkoutLatitude", checkoutLatitude);
+        doc.append("checkoutLongitude", checkoutLongitude);
+        doc.append("checkoutAddress", checkoutAddress);
+
         return doc;
     }
 
@@ -61,6 +76,15 @@ public class AttendanceRecord {
         }
 
         record.totalHours = doc.getDouble("totalHours");
+
+        // Lấy location info
+        record.checkinLatitude = doc.getDouble("checkinLatitude");
+        record.checkinLongitude = doc.getDouble("checkinLongitude");
+        record.checkinAddress = doc.getString("checkinAddress");
+        record.checkoutLatitude = doc.getDouble("checkoutLatitude");
+        record.checkoutLongitude = doc.getDouble("checkoutLongitude");
+        record.checkoutAddress = doc.getString("checkoutAddress");
+
         return record;
     }
 
@@ -82,4 +106,22 @@ public class AttendanceRecord {
 
     public Double getTotalHours() { return totalHours; }
     public void setTotalHours(Double totalHours) { this.totalHours = totalHours; }
+
+    public Double getCheckinLatitude() { return checkinLatitude; }
+    public void setCheckinLatitude(Double checkinLatitude) { this.checkinLatitude = checkinLatitude; }
+
+    public Double getCheckinLongitude() { return checkinLongitude; }
+    public void setCheckinLongitude(Double checkinLongitude) { this.checkinLongitude = checkinLongitude; }
+
+    public String getCheckinAddress() { return checkinAddress; }
+    public void setCheckinAddress(String checkinAddress) { this.checkinAddress = checkinAddress; }
+
+    public Double getCheckoutLatitude() { return checkoutLatitude; }
+    public void setCheckoutLatitude(Double checkoutLatitude) { this.checkoutLatitude = checkoutLatitude; }
+
+    public Double getCheckoutLongitude() { return checkoutLongitude; }
+    public void setCheckoutLongitude(Double checkoutLongitude) { this.checkoutLongitude = checkoutLongitude; }
+
+    public String getCheckoutAddress() { return checkoutAddress; }
+    public void setCheckoutAddress(String checkoutAddress) { this.checkoutAddress = checkoutAddress; }
 }

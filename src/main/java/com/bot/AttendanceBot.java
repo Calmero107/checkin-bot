@@ -3,12 +3,15 @@ package com.bot;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.objects.Location;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
-import java.io.*;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -25,6 +28,7 @@ public class AttendanceBot extends TelegramLongPollingBot {
     private static final String BOT_USERNAME;
 
     private final MongoDBService mongoService;
+    private final Map<Long, String> waitingForLocation = new HashMap<>(); // Lưu trạng thái chờ location
 
     static {
         Dotenv dotenv = Dotenv.load();
@@ -50,6 +54,8 @@ public class AttendanceBot extends TelegramLongPollingBot {
     public void onUpdateReceived(Update update) {
         if (update.hasMessage() && update.getMessage().hasText()) {
             handleTextMessage(update);
+        } else if (update.hasMessage() && update.getMessage().hasLocation()) {
+            handleLocationMessage(update);
         } else if (update.hasCallbackQuery()) {
             handleCallbackQuery(update);
         }
@@ -74,10 +80,10 @@ public class AttendanceBot extends TelegramLongPollingBot {
                 sendWelcomeMessage(chatId);
                 break;
             case "/checkin":
-                handleCheckin(chatId, userId, username);
+                requestLocationForCheckin(chatId, userId, username);
                 break;
             case "/checkout":
-                handleCheckout(chatId, userId, username);
+                requestLocationForCheckout(chatId, userId, username);
                 break;
             case "/today":
                 handleTodayStats(chatId, userId);
@@ -95,7 +101,28 @@ public class AttendanceBot extends TelegramLongPollingBot {
                 handleAllMonthStats(chatId, userId);
                 break;
             default:
-                sendMessage(chatId, "❓ Lệnh không hợp lệ. Sử dụng /start để xem các chức năng.");
+                sendMessage(chatId, "❌ Lệnh không hợp lệ. Sử dụng /start để xem các chức năng.");
+        }
+    }
+
+    private void handleLocationMessage(Update update) {
+        long chatId = update.getMessage().getChatId();
+        Long userId = update.getMessage().getFrom().getId();
+        String username = update.getMessage().getFrom().getUserName();
+        Location location = update.getMessage().getLocation();
+
+        if (username == null || username.isEmpty()) {
+            username = "user_" + userId;
+        }
+
+        String action = waitingForLocation.getOrDefault(userId, "");
+
+        if ("checkin".equals(action)) {
+            handleCheckinWithLocation(chatId, userId, username, location);
+            waitingForLocation.remove(userId);
+        } else if ("checkout".equals(action)) {
+            handleCheckoutWithLocation(chatId, userId, username, location);
+            waitingForLocation.remove(userId);
         }
     }
 
@@ -111,14 +138,13 @@ public class AttendanceBot extends TelegramLongPollingBot {
 
         switch (callbackData) {
             case "checkin":
-                handleCheckin(chatId, userId, username);
+                requestLocationForCheckin(chatId, userId, username);
                 break;
             case "checkout":
-                handleCheckout(chatId, userId, username);
+                requestLocationForCheckout(chatId, userId, username);
                 break;
         }
 
-        // Trả lời callback
         try {
             org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery answer =
                     new org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery();
@@ -132,13 +158,11 @@ public class AttendanceBot extends TelegramLongPollingBot {
     private void sendWelcomeMessage(long chatId) {
         String welcomeText = "👋 Chào mừng bạn đến với Bot Chấm Công!\n\n" +
                 "📋 Các chức năng cá nhân:\n" +
-                "🔘 Checkin - Bắt đầu làm việc\n" +
-                "📤 Checkout - Kết thúc ngày làm việc\n" +
+                "📍 Checkin - Bắt đầu làm việc\n" +
+                "🔓 Checkout - Kết thúc ngày làm việc\n" +
                 "📊 /today - Xem thống kê hôm nay\n" +
                 "📈 /week - Xem thống kê tuần này\n\n";
 
-        // Hiển thị thêm lệnh admin nếu là admin
-        Long userId = null; // Sẽ được set trong context thực tế
         if (chatId > 0 && ADMIN_IDS.contains(chatId)) {
             welcomeText += "👨‍💼 Các lệnh Admin:\n" +
                     "📊 /alltoday - Thống kê tất cả nhân viên hôm nay\n" +
@@ -146,7 +170,7 @@ public class AttendanceBot extends TelegramLongPollingBot {
                     "📅 /allmonth - Thống kê tất cả nhân viên tháng này\n\n";
         }
 
-        welcomeText += "💾 Dữ liệu được lưu trên MongoDB\n\n" +
+        welcomeText += "💾 Dữ liệu được lưu trên MongoDB (kèm vị trí GPS)\n\n" +
                 "Chọn chức năng bên dưới:";
 
         sendMessageWithKeyboard(chatId, welcomeText);
@@ -158,12 +182,12 @@ public class AttendanceBot extends TelegramLongPollingBot {
 
         List<InlineKeyboardButton> row1 = new ArrayList<>();
         InlineKeyboardButton checkinBtn = new InlineKeyboardButton();
-        checkinBtn.setText("🔘 Checkin");
+        checkinBtn.setText("📍 Checkin");
         checkinBtn.setCallbackData("checkin");
         row1.add(checkinBtn);
 
         InlineKeyboardButton checkoutBtn = new InlineKeyboardButton();
-        checkoutBtn.setText("📤 Checkout");
+        checkoutBtn.setText("🔓 Checkout");
         checkoutBtn.setCallbackData("checkout");
         row1.add(checkoutBtn);
 
@@ -173,30 +197,92 @@ public class AttendanceBot extends TelegramLongPollingBot {
         return markup;
     }
 
-    private void handleCheckin(long chatId, Long userId, String username) {
+    private void requestLocationForCheckin(long chatId, Long userId, String username) {
+        waitingForLocation.put(userId, "checkin");
+
+        SendMessage message = new SendMessage();
+        message.setChatId(String.valueOf(chatId));
+        message.setText("📍 Vui lòng chia sẻ vị trí hiện tại của bạn để checkin");
+
+        ReplyKeyboardMarkup keyboard = new ReplyKeyboardMarkup();
+        keyboard.setOneTimeKeyboard(true);
+        keyboard.setResizeKeyboard(true);
+
+        List<KeyboardRow> rows = new ArrayList<>();
+        KeyboardRow row = new KeyboardRow();
+        KeyboardButton button = new KeyboardButton();
+        button.setText("📍 Gửi vị trí hiện tại");
+        button.setRequestLocation(true);
+        row.add(button);
+        rows.add(row);
+
+        keyboard.setKeyboard(rows);
+        message.setReplyMarkup(keyboard);
+
+        try {
+            execute(message);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void requestLocationForCheckout(long chatId, Long userId, String username) {
+        waitingForLocation.put(userId, "checkout");
+
+        SendMessage message = new SendMessage();
+        message.setChatId(String.valueOf(chatId));
+        message.setText("📍 Vui lòng chia sẻ vị trí hiện tại của bạn để checkout");
+
+        ReplyKeyboardMarkup keyboard = new ReplyKeyboardMarkup();
+        keyboard.setOneTimeKeyboard(true);
+        keyboard.setResizeKeyboard(true);
+
+        List<KeyboardRow> rows = new ArrayList<>();
+        KeyboardRow row = new KeyboardRow();
+        KeyboardButton button = new KeyboardButton();
+        button.setText("📍 Gửi vị trí hiện tại");
+        button.setRequestLocation(true);
+        row.add(button);
+        rows.add(row);
+
+        keyboard.setKeyboard(rows);
+        message.setReplyMarkup(keyboard);
+
+        try {
+            execute(message);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void handleCheckinWithLocation(long chatId, Long userId, String username, Location location) {
         LocalDateTime now = LocalDateTime.now();
         LocalDate today = now.toLocalDate();
 
-        // Kiểm tra đã checkin chưa
         AttendanceRecord existingRecord = mongoService.getTodayRecord(userId, today);
 
         if (existingRecord != null && existingRecord.getCheckinTime() != null) {
-            sendMessage(chatId, "⚠️ Bạn đã checkin hôm nay rồi lúc " +
-                    existingRecord.getCheckinTime().format(TIME_FORMATTER));
+            sendMessage(chatId, "⚠️ Bạn đã checkin hôm nay lúc " +
+                    existingRecord.getCheckinTime().format(TIME_FORMATTER) + "\n" +
+                    "📍 Vị trí: " + existingRecord.getCheckinAddress());
             return;
         }
 
-        // Tạo record mới
         AttendanceRecord record = new AttendanceRecord(userId, username, today, now, null, 0.0);
+        record.setCheckinLatitude(location.getLatitude());
+        record.setCheckinLongitude(location.getLongitude());
+        record.setCheckinAddress(getLocation(location.getLatitude(), location.getLongitude()));
+
         mongoService.saveOrUpdateRecord(record);
 
         String responseText = "✅ Checkin thành công lúc " + now.format(TIME_FORMATTER) + "\n" +
-                "📤 Nhấn \"Checkout\" khi bạn kết thúc ngày làm việc";
+                "📍 Vị trí: " + record.getCheckinAddress() + "\n" +
+                "🔓 Nhấn \"Checkout\" khi bạn kết thúc ngày làm việc";
 
         sendMessageWithKeyboard(chatId, responseText);
     }
 
-    private void handleCheckout(long chatId, Long userId, String username) {
+    private void handleCheckoutWithLocation(long chatId, Long userId, String username, Location location) {
         LocalDateTime now = LocalDateTime.now();
         LocalDate today = now.toLocalDate();
 
@@ -209,22 +295,32 @@ public class AttendanceBot extends TelegramLongPollingBot {
 
         if (record.getCheckoutTime() != null) {
             sendMessage(chatId, "⚠️ Bạn đã checkout rồi lúc " +
-                    record.getCheckoutTime().format(TIME_FORMATTER));
+                    record.getCheckoutTime().format(TIME_FORMATTER) + "\n" +
+                    "📍 Vị trí: " + record.getCheckoutAddress());
             return;
         }
 
-        // Cập nhật checkout time
         record.setCheckoutTime(now);
+        record.setCheckoutLatitude(location.getLatitude());
+        record.setCheckoutLongitude(location.getLongitude());
+        record.setCheckoutAddress(getLocation(location.getLatitude(), location.getLongitude()));
+
         Duration duration = Duration.between(record.getCheckinTime(), record.getCheckoutTime());
         record.setTotalHours(duration.toMinutes() / 60.0);
 
         mongoService.saveOrUpdateRecord(record);
 
-        String responseText = "📤 Checkout thành công lúc " + now.format(TIME_FORMATTER) + "\n" +
+        String responseText = "🔓 Checkout thành công lúc " + now.format(TIME_FORMATTER) + "\n" +
+                "📍 Vị trí: " + record.getCheckoutAddress() + "\n" +
                 "⏱ Tổng thời gian làm việc hôm nay: " +
                 String.format("%.2f giờ", record.getTotalHours());
 
         sendMessage(chatId, responseText);
+    }
+
+    private String getLocation(Double latitude, Double longitude) {
+        return GeoService.getAddressFromCoordinates(latitude, longitude);
+//        return String.format("%.4f, %.4f", latitude, longitude);
     }
 
     private void handleTodayStats(long chatId, Long userId) {
@@ -238,13 +334,15 @@ public class AttendanceBot extends TelegramLongPollingBot {
 
         StringBuilder stats = new StringBuilder();
         stats.append("📊 THỐNG KÊ HÔM NAY (").append(today.format(DATE_FORMATTER)).append(")\n\n");
-        stats.append("🔘 Checkin: ").append(record.getCheckinTime().format(TIME_FORMATTER)).append("\n");
+        stats.append("📍 Checkin: ").append(record.getCheckinTime().format(TIME_FORMATTER)).append("\n");
+        stats.append("   Vị trí: ").append(record.getCheckinAddress()).append("\n\n");
 
         if (record.getCheckoutTime() != null) {
-            stats.append("📤 Checkout: ").append(record.getCheckoutTime().format(TIME_FORMATTER)).append("\n");
+            stats.append("🔓 Checkout: ").append(record.getCheckoutTime().format(TIME_FORMATTER)).append("\n");
+            stats.append("   Vị trí: ").append(record.getCheckoutAddress()).append("\n\n");
             stats.append("⏱ Tổng giờ: ").append(String.format("%.2f giờ", record.getTotalHours()));
         } else {
-            stats.append("📤 Checkout: Chưa checkout\n");
+            stats.append("🔓 Checkout: Chưa checkout\n");
             Duration currentDuration = Duration.between(record.getCheckinTime(), LocalDateTime.now());
             double currentHours = currentDuration.toMinutes() / 60.0;
             stats.append("⏱ Đã làm: ").append(String.format("%.2f giờ", currentHours)).append(" (đang làm việc)");
@@ -273,20 +371,22 @@ public class AttendanceBot extends TelegramLongPollingBot {
 
         for (AttendanceRecord record : weekRecords) {
             stats.append("📅 ").append(record.getDate().format(DATE_FORMATTER)).append("\n");
-            stats.append("   Checkin: ").append(record.getCheckinTime().format(TIME_FORMATTER));
+            stats.append("   📍 In: ").append(record.getCheckinTime().format(TIME_FORMATTER));
+            stats.append(" (").append(record.getCheckinAddress()).append(")");
 
             if (record.getCheckoutTime() != null) {
-                stats.append(" | Checkout: ").append(record.getCheckoutTime().format(TIME_FORMATTER));
-                stats.append(" | ").append(String.format("%.2fh", record.getTotalHours()));
+                stats.append("\n   🔓 Out: ").append(record.getCheckoutTime().format(TIME_FORMATTER));
+                stats.append(" (").append(record.getCheckoutAddress()).append(")");
+                stats.append("\n   ⏱ ").append(String.format("%.2fh", record.getTotalHours()));
                 totalWeekHours += record.getTotalHours();
                 workDays++;
             } else {
-                stats.append(" | Chưa checkout");
+                stats.append("\n   🔓 Chưa checkout");
             }
-            stats.append("\n");
+            stats.append("\n\n");
         }
 
-        stats.append("\n📊 Tổng kết:\n");
+        stats.append("📊 Tổng kết:\n");
         stats.append("   • Số ngày làm: ").append(workDays).append("\n");
         stats.append("   • Tổng giờ: ").append(String.format("%.2f giờ", totalWeekHours)).append("\n");
         if (workDays > 0) {
@@ -321,15 +421,13 @@ public class AttendanceBot extends TelegramLongPollingBot {
         }
     }
 
-    // Kiểm tra quyền admin
     private boolean isAdmin(Long userId) {
         return ADMIN_IDS.contains(userId);
     }
 
-    // Thống kê tất cả nhân viên hôm nay (Admin only)
     private void handleAllTodayStats(long chatId, Long userId) {
         if (!isAdmin(userId)) {
-            sendMessage(chatId, "⛔ Bạn không có quyền sử dụng lệnh này!");
+            sendMessage(chatId, "❌ Bạn không có quyền sử dụng lệnh này!");
             return;
         }
 
@@ -344,7 +442,7 @@ public class AttendanceBot extends TelegramLongPollingBot {
         StringBuilder stats = new StringBuilder();
         stats.append("📊 THỐNG KÊ TẤT CẢ NHÂN VIÊN HÔM NAY\n");
         stats.append("📅 ").append(today.format(DATE_FORMATTER)).append("\n");
-        stats.append("━━━━━━━━━━━━━━━━━━━━━━\n\n");
+        stats.append("═══════════════════════════════════\n\n");
 
         double totalHours = 0.0;
         int checkedIn = 0;
@@ -352,10 +450,12 @@ public class AttendanceBot extends TelegramLongPollingBot {
 
         for (AttendanceRecord record : allRecords) {
             stats.append("👤 ").append(record.getUsername()).append("\n");
-            stats.append("   🔘 In: ").append(record.getCheckinTime().format(TIME_FORMATTER));
+            stats.append("   📍 In: ").append(record.getCheckinTime().format(TIME_FORMATTER));
+            stats.append(" (").append(record.getCheckinAddress()).append(")");
 
             if (record.getCheckoutTime() != null) {
-                stats.append(" | 📤 Out: ").append(record.getCheckoutTime().format(TIME_FORMATTER));
+                stats.append("\n   🔓 Out: ").append(record.getCheckoutTime().format(TIME_FORMATTER));
+                stats.append(" (").append(record.getCheckoutAddress()).append(")");
                 stats.append("\n   ⏱ ").append(String.format("%.2fh", record.getTotalHours()));
                 totalHours += record.getTotalHours();
                 checkedOut++;
@@ -368,7 +468,7 @@ public class AttendanceBot extends TelegramLongPollingBot {
             checkedIn++;
         }
 
-        stats.append("━━━━━━━━━━━━━━━━━━━━━━\n");
+        stats.append("═══════════════════════════════════\n");
         stats.append("📈 TỔNG KẾT:\n");
         stats.append("   • Đã checkin: ").append(checkedIn).append(" người\n");
         stats.append("   • Đã checkout: ").append(checkedOut).append(" người\n");
@@ -377,10 +477,9 @@ public class AttendanceBot extends TelegramLongPollingBot {
         sendMessage(chatId, stats.toString());
     }
 
-    // Thống kê tất cả nhân viên tuần này (Admin only)
     private void handleAllWeekStats(long chatId, Long userId) {
         if (!isAdmin(userId)) {
-            sendMessage(chatId, "⛔ Bạn không có quyền sử dụng lệnh này!");
+            sendMessage(chatId, "❌ Bạn không có quyền sử dụng lệnh này!");
             return;
         }
 
@@ -395,7 +494,6 @@ public class AttendanceBot extends TelegramLongPollingBot {
             return;
         }
 
-        // Nhóm theo user
         Map<String, List<AttendanceRecord>> userRecords = new HashMap<>();
         for (AttendanceRecord record : allRecords) {
             userRecords.computeIfAbsent(record.getUsername(), k -> new ArrayList<>()).add(record);
@@ -404,7 +502,7 @@ public class AttendanceBot extends TelegramLongPollingBot {
         StringBuilder stats = new StringBuilder();
         stats.append("📈 THỐNG KÊ TẤT CẢ NHÂN VIÊN TUẦN NÀY\n");
         stats.append("📅 Tuần ").append(currentWeek).append("\n");
-        stats.append("━━━━━━━━━━━━━━━━━━━━━━\n\n");
+        stats.append("═══════════════════════════════════\n\n");
 
         double grandTotalHours = 0.0;
 
@@ -434,7 +532,7 @@ public class AttendanceBot extends TelegramLongPollingBot {
             grandTotalHours += userTotalHours;
         }
 
-        stats.append("━━━━━━━━━━━━━━━━━━━━━━\n");
+        stats.append("═══════════════════════════════════\n");
         stats.append("📊 TỔNG KẾT TOÀN BỘ:\n");
         stats.append("   • Tổng nhân viên: ").append(userRecords.size()).append("\n");
         stats.append("   • Tổng giờ làm: ").append(String.format("%.2fh", grandTotalHours));
@@ -442,10 +540,9 @@ public class AttendanceBot extends TelegramLongPollingBot {
         sendMessage(chatId, stats.toString());
     }
 
-    // Thống kê tất cả nhân viên tháng này (Admin only)
     private void handleAllMonthStats(long chatId, Long userId) {
         if (!isAdmin(userId)) {
-            sendMessage(chatId, "⛔ Bạn không có quyền sử dụng lệnh này!");
+            sendMessage(chatId, "❌ Bạn không có quyền sử dụng lệnh này!");
             return;
         }
 
@@ -460,7 +557,6 @@ public class AttendanceBot extends TelegramLongPollingBot {
             return;
         }
 
-        // Nhóm theo user
         Map<String, List<AttendanceRecord>> userRecords = new HashMap<>();
         for (AttendanceRecord record : allRecords) {
             userRecords.computeIfAbsent(record.getUsername(), k -> new ArrayList<>()).add(record);
@@ -469,7 +565,7 @@ public class AttendanceBot extends TelegramLongPollingBot {
         StringBuilder stats = new StringBuilder();
         stats.append("📅 THỐNG KÊ TẤT CẢ NHÂN VIÊN THÁNG NÀY\n");
         stats.append("📆 Tháng ").append(currentMonth).append("/").append(currentYear).append("\n");
-        stats.append("━━━━━━━━━━━━━━━━━━━━━━\n\n");
+        stats.append("═══════════════════════════════════\n\n");
 
         double grandTotalHours = 0.0;
 
@@ -483,7 +579,7 @@ public class AttendanceBot extends TelegramLongPollingBot {
                     .filter(r -> r.getCheckoutTime() != null)
                     .mapToDouble(AttendanceRecord::getTotalHours)
                     .sum();
-            return Double.compare(totalB, totalA); // Sắp xếp giảm dần
+            return Double.compare(totalB, totalA);
         });
 
         for (Map.Entry<String, List<AttendanceRecord>> entry : sortedUsers) {
@@ -512,7 +608,7 @@ public class AttendanceBot extends TelegramLongPollingBot {
             grandTotalHours += userTotalHours;
         }
 
-        stats.append("━━━━━━━━━━━━━━━━━━━━━━\n");
+        stats.append("═══════════════════════════════════\n");
         stats.append("📊 TỔNG KẾT TOÀN BỘ:\n");
         stats.append("   • Tổng nhân viên: ").append(userRecords.size()).append("\n");
         stats.append("   • Tổng giờ làm: ").append(String.format("%.2fh", grandTotalHours));
